@@ -1,0 +1,2 @@
+module JAA2M {
+}

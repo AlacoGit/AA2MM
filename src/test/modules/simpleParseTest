@@ -1,0 +1,8 @@
+name = "SimpleParseTest"
+
+/*
+my description*/
+description = "A simple parse test"
+
+// some globals
+globals = [foo = 1, bar = "bar", baz = true,/*made this one up*/ baq = 1.0]

@@ -1,0 +1,2 @@
+description = "This is a description with linebreaks in it.
+it should still parse fine."
