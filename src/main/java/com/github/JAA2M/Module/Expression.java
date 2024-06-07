@@ -2,7 +2,7 @@ package com.github.JAA2M.Module;
 
 import com.github.JAA2M.wString;
 
-import java.util.List;
+import java.util.*;
 
 public record Expression(/*DWORD*/ int id, Category category, String name, String interactiveName, String description, List<Value.Types> parameters, Value.Types returnType) {
 
@@ -310,14 +310,17 @@ public record Expression(/*DWORD*/ int id, Category category, String name, Strin
         }
     }
 
-    public static final class ParameterisedExpression{
+    /**
+     * An {@code Expression} with bound parameters
+     */
+    public static final class ParameterisedExpression implements Formattable {
         private final Expression expression;
         private final List<ParameterisedExpression> actualParameters;
-        private final Value constant;
-        private final wString varName;
+        private final Value<?> constant;
+        private final Value.strValue varName;
         private final NamedConstant namedConstant;
 
-        private ParameterisedExpression(Expression expression, List<ParameterisedExpression> actualParameters, Value constant, wString varName, NamedConstant namedConstant){
+        private ParameterisedExpression(Expression expression, List<ParameterisedExpression> actualParameters, Value<?> constant, Value.strValue varName, NamedConstant namedConstant){
             this.expression = expression;
             this.actualParameters = actualParameters;
             this.constant = constant;
@@ -328,16 +331,61 @@ public record Expression(/*DWORD*/ int id, Category category, String name, Strin
         public ParameterisedExpression(Value.Types type, /*DWORD*/ int exprId, List<ParameterisedExpression> actualParams){
             this(Expression.fromID(type, exprId),actualParams,null,null,null);
         }
-        public ParameterisedExpression(Value.Types type, Value constant){
+        public ParameterisedExpression(Value.Types type, Value<?> constant){
             this(Expression.fromID(type, ExpressionTypes.CONSTANT.id),null,constant,null,null);
         }
-        public ParameterisedExpression(Value.Types type, wString var){
+        public ParameterisedExpression(Value.Types type, Value.strValue var){
             this(Expression.fromID(type,ExpressionTypes.VAR.id),null,null,var,null);
         }
         public ParameterisedExpression(Expression exp, int namedConstandID){
             this(exp,null,null,null,NamedConstant.FromId(exp.returnType,namedConstandID));
         }
 
+        /**
+         * Basic {@code Formattable} implementation.
+         * If the {link FormattableFlags#ALTERNATE} flag is set {@code Expression.name} will be used
+         * otherwise {@code Expression.interactiveName} is used.
+         * Note that calls to this function might recursively call {@code formatTo} on this objects members.
+         * In that case, using the precision flag might result in
+         * @see Formattable#formatTo(Formatter, int, int, int)
+         */
+        @Override
+        public void formatTo(Formatter formatter, int flags, int width, int precision) {
+            StringBuilder sb = new StringBuilder();
+
+            // decide form of name
+            boolean alternate = (flags & FormattableFlags.ALTERNATE) == FormattableFlags.ALTERNATE;
+            String out = (alternate ? expression.name : expression.interactiveName.replace("%p","%s"));
+
+            // apply precision
+            if (precision == -1 || out.length() < precision) {
+                // write it all
+                sb.append(out);
+            } else {
+                sb.append(out, 0, precision - 1).append('*');
+            }
+
+            // apply width and justification
+            int len = sb.length();
+            if (len < width){
+                for (int i = 0; i < width - len; i++) {
+                    if ((flags & FormattableFlags.LEFT_JUSTIFY) == FormattableFlags.LEFT_JUSTIFY) {
+                        sb.append(' ');
+                    } else {
+                        sb.insert(0, ' ');
+                    }
+                }
+            }
+            if(this.actualParameters != null){
+                formatter.format(sb.toString(),actualParameters.toArray());
+            } else if(this.constant != null){
+                formatter.format("%s",constant.getValue());
+            } else if(this.varName != null){
+                formatter.format(sb.toString(),varName);
+            } else {
+                formatter.format(sb.toString(),namedConstant);
+            }
+        }
     }
 
 }

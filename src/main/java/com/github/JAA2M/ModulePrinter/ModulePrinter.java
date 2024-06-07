@@ -1,6 +1,7 @@
 package com.github.JAA2M.ModulePrinter;
 
 import com.github.JAA2M.Module.Module;
+import com.github.JAA2M.Module.Trigger;
 
 import java.io.IOException;
 import java.io.PrintStream;
@@ -17,7 +18,12 @@ public class ModulePrinter {
     public static void Print(Module module, PrintStream out) throws IOException {
         out.println(module.name);
         out.println(module.desc);
-        out.println(module.globals);
+        if(!module.globals.isEmpty()) {
+            out.println(module.globals);
+        }
+        for(Trigger trigger : module.triggerList){
+            out.print(trigger.toPrintable());
+        }
     }
 
     /**

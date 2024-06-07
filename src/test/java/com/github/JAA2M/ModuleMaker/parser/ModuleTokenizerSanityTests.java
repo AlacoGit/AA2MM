@@ -1,11 +1,10 @@
 package com.github.JAA2M.ModuleMaker.parser;
 
-import org.junit.jupiter.api.Test;
-
 import java.io.IOException;
 import java.io.StringReader;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ModuleTokenizerSanityTests {
 

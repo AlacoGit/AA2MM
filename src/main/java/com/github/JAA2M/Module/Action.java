@@ -7,6 +7,12 @@ public record Action(/*DWORD*/ int id, ActionCategories categories, String name,
                 ParameterisedAction(/*DWORD*/ int ActionID, List<Expression.ParameterisedExpression> actualParameters){
                         this(Action.fromId(ActionID),actualParameters);
                 }
+
+                public String formatPrintable(){
+                    String ret = action.interactiveName.replace("%p","%s");
+                    return ret.formatted(actualParameters.toArray());
+                    //return action.interactiveName.replace("%p","%s").formatted(actualParameters);
+                }
         }
         public static final Action[] g_Actions = new Action[]{
             new Action(

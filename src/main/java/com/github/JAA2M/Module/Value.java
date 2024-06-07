@@ -3,8 +3,9 @@ package com.github.JAA2M.Module;
 import com.github.JAA2M.wString;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
-public sealed interface Value permits Value.invalidValue,Value.intValue,Value.floatValue,Value.boolValue,Value.strValue{
+public sealed interface Value<T> permits Value.invalidValue,Value.intValue,Value.floatValue,Value.boolValue,Value.strValue{
     enum Types{
         INVALID("error type"),
         INT("int"),
@@ -18,7 +19,7 @@ public sealed interface Value permits Value.invalidValue,Value.intValue,Value.fl
         }
     }
 
-    static Value of(Types type){
+    static Value<?> of(Types type){
         return switch(type){
             case INVALID -> new invalidValue();
             case INT -> new intValue(0);
@@ -28,47 +29,117 @@ public sealed interface Value permits Value.invalidValue,Value.intValue,Value.fl
         };
     }
 
+    T getValue();
+
     static intValue of(int value){
         return new intValue(value);
     }
     static boolValue of(boolean value){
         return new boolValue(value);
     }
-    static boolValue of(byte value){return new boolValue(value);};
+    static boolValue of(byte value){
+        return new boolValue(value);
+    }
     static floatValue of(float value){
         return new floatValue(value);
     }
-    static strValue of(byte[] value){
+    static strValue of(String value){
         return new strValue(value);
     }
 
-    static strValue of(String value){
-        return new strValue((value.getBytes(StandardCharsets.UTF_16LE)));
-    }
-    static strValue of(wString value){return new strValue(value.get().getBytes());}
+    record intValue(int value) implements Value<Integer>{
+        @Override
+        public Integer getValue() {
+            return value;
+        }
 
-    record intValue(int value) implements Value{}
-    record boolValue(boolean value) implements Value{
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof intValue intValue)) return false;
+            return getValue().equals(intValue.getValue());
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hashCode(getValue());
+        }
+    }
+    record boolValue(boolean value) implements Value<Boolean>{
         boolValue(byte value){
             this((int)value == 1);
         }
-    }
-    record floatValue(float value) implements Value{}
-    record strValue(byte[] value) implements Value, wString {
-        strValue(String value){
-            this(value.getBytes(StandardCharsets.UTF_16LE));
+
+        @Override
+        public Boolean getValue() {
+            return value;
         }
 
         @Override
-        public String get() {
-            return new String(value,StandardCharsets.UTF_16LE);
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof boolValue boolValue)) return false;
+            return getValue() == boolValue.getValue();
         }
 
         @Override
-        public String toString(){
-            return this.get();
+        public int hashCode() {
+            return Objects.hashCode(getValue());
         }
     }
-    record invalidValue() implements Value {}
+    record floatValue(float value) implements Value<Float>{
+        @Override
+        public Float getValue() {
+            return value;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof floatValue that)) return false;
+            return Float.compare(getValue(), that.getValue()) == 0;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hashCode(getValue());
+        }
+    }
+    record strValue(String value) implements Value<String>, wString {
+
+        @Override
+        public String getWString() {
+            return new String(value.getBytes(StandardCharsets.UTF_16LE),StandardCharsets.UTF_16LE);
+        }
+
+        @Override
+        public String toString() {
+            return this.getValue();
+        }
+
+        @Override
+        public String getValue() {
+            return value;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof strValue strValue)) return false;
+            return Objects.equals(getValue(), strValue.getValue());
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hashCode(getValue());
+        }
+    }
+    record invalidValue() implements Value<Void> {
+
+        @Override
+        public Void getValue() {
+            throw new RuntimeException("Not meant to be called");
+        }
+    }
 
 }

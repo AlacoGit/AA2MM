@@ -394,7 +394,12 @@ public record NamedConstant(/*DWORD*/ int id, NamedConstantCategories category, 
                 // STRING
             }
         };
-    
+
+    @Override
+    public String toString() {
+        return interactiveName;
+    }
+
     public static NamedConstant FromId(Value.Types type, int id){
         for(int i = 0;i < g_NamedConstants[type.ordinal()].length;i++){
             if(g_NamedConstants[type.ordinal()][i].id == id){

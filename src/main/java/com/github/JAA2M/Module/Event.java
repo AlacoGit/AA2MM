@@ -49,7 +49,11 @@ public enum Event{
         this.parameters = parameters;
     }
 
-    public record ParameterisedEvent(Event event, List<Expression.ParameterisedExpression> actualParameters){}
+    public record ParameterisedEvent(Event event, List<Expression.ParameterisedExpression> actualParameters){
+        public String toPrintable(){
+            return event.name;
+        }
+    }
     public static Event fromID(int id){
         if(id < 1 || id > Events.values().length) return null;
         return Event.values()[id-1];
@@ -86,6 +90,10 @@ public enum Event{
         CONVERSATION_END,
         RELATIONSHIP_POINT_CHANGED,
         DELAYED_EXECUTION;
+    }
+    @Override
+    public String toString(){
+        return this.category+":"+this.name;
     }
 
 }

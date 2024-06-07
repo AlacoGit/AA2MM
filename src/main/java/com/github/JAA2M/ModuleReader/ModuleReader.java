@@ -1,19 +1,29 @@
 package com.github.JAA2M.ModuleReader;
 
-
-import com.github.JAA2M.Module.*;
-import com.github.JAA2M.Module.Module;
-import com.github.JAA2M.wString;
-
 import java.io.IOException;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import com.github.JAA2M.Module.Action;
+import com.github.JAA2M.Module.Event;
+import com.github.JAA2M.Module.Expression;
+import com.github.JAA2M.Module.GUIAction;
+import com.github.JAA2M.Module.GlobalVariable;
+import com.github.JAA2M.Module.Module;
+import com.github.JAA2M.Module.Trigger;
+import com.github.JAA2M.Module.Value;
+import com.github.JAA2M.Module.Variable;
+import com.github.JAA2M.wString;
 
 /**
  * This class reads a AA2U Module file and returns a {@link Module} object representing the Module file.
@@ -22,22 +32,21 @@ import java.util.function.Supplier;
  */
 public class ModuleReader {
     private final ByteBuffer bb;
-
     public ModuleReader(String path){
         Path p = Path.of(path);
         try (FileChannel fc = FileChannel.open(p, StandardOpenOption.READ)) {
             this.bb = fc.map(FileChannel.MapMode.READ_ONLY,0,p.toFile().length());
             this.bb.order(ByteOrder.LITTLE_ENDIAN);
         } catch (IOException ex) {
+            Logger.getLogger("com.github.JAA2M.ModuleReader").log(Level.SEVERE,"Failed to load file %s with the following error.".formatted(path));
             throw new RuntimeException(ex);
         }
     }
 
-    /**
-     * Private Constructor to facilitate testing
-     * @param bb
+    /*
+        NOTE: This class will modify the position of the given ByteBuffer
      */
-    private ModuleReader(ByteBuffer bb){
+    public ModuleReader(ByteBuffer bb){
         this.bb = bb;
     }
 
@@ -46,22 +55,40 @@ public class ModuleReader {
         return mr.readModule();
     }
 
-    private boolean readBoolean(){
+    int readInt() throws MissingElementException{
+        try {
+            return this.bb.getInt();
+        } catch (BufferUnderflowException bue){
+            throw new MissingElementException(bue);
+        }
+    }
+
+   boolean readBoolean(){
         byte raw = this.bb.get();
         //00000001 - True | 00000000 - False
         return (raw & 0b1) != 0;
     }
 
-    private Value.Types readType(){
-        int id = this.bb.getInt();
-        return Value.Types.values()[id];
+    Value.Types readType(){
+        try{
+            int id = this.readInt();
+            return Value.Types.values()[id];
+        } catch (MissingElementException mee) {
+            Logger.getLogger("com.github.JAA2M.ModuleReader").log(Level.SEVERE,"Terminating:\n Failed to read Type starting at %d: \n Expected int at %<d".formatted(this.bb.position()));
+            throw new RuntimeException(mee);
+        }
     }
 
-    private wString readString(){
-        int len = this.bb.getInt();
-        byte[] strbuff = new byte[len*2];
-        this.bb.get(strbuff);
-        return wString.of(strbuff);
+    Value.strValue readString() throws MissingElementException{
+            int len = this.readInt();
+            byte[] strbuff = new byte[len * 2];
+            try{
+                this.bb.get(strbuff);
+            } catch (BufferUnderflowException bue){
+                throw new MissingElementException(bue);
+            }
+            String ret = new String(strbuff, StandardCharsets.UTF_16LE);
+            return wString.of(ret);
     }
 
     private Expression.ParameterisedExpression readExpression(){
@@ -71,11 +98,21 @@ public class ModuleReader {
         if(id == Expression.ExpressionTypes.CONSTANT.id){
             return new Expression.ParameterisedExpression(type,this.readValue());
         } else if(id == Expression.ExpressionTypes.VAR.id){
-            return new Expression.ParameterisedExpression(type,this.readString());
+            try{
+                return new Expression.ParameterisedExpression(type,this.readString());
+            } catch (MissingElementException mee){
+                Logger.getLogger("com.github.JAA2M.ModuleReader").log(Level.SEVERE,"Terminating:\n Failed to read Expression starting at %d: \n Expected int at %<d".formatted(this.bb.position()));
+                throw new RuntimeException(mee);
+            }
         } else if(id == Expression.ExpressionTypes.NAMEDCONSTANT.id){
-            int idnc = this.bb.getInt();
-            Expression exp = Expression.fromID(type,id);
-            return new Expression.ParameterisedExpression(exp,idnc);
+            try{
+                int idnc = this.readInt();
+                Expression exp = Expression.fromID(type,id);
+                return new Expression.ParameterisedExpression(exp,idnc);
+            } catch (MissingElementException mee){
+                Logger.getLogger("com.github.JAA2M.ModuleReader").log(Level.SEVERE,"Terminating:\n Failed to read Expression starting at %d: \n Expected constant ID at %<d".formatted(this.bb.position()));
+                throw new RuntimeException(mee);
+            }
         } else {
             return new Expression.ParameterisedExpression(type,id,this.readListOf(this::readExpression));
         }
@@ -83,7 +120,15 @@ public class ModuleReader {
     }
 
     private Variable readVariable(){
-        return new Variable(-5,this.readType(),this.readString(),this.readExpression());
+        try{
+            var type = this.readType();
+            var name = this.readString();
+            var exp = this.readExpression();
+            return new Variable(-5,type,name,exp);
+        } catch (MissingElementException mee){
+            Logger.getLogger("com.github.JAA2M.ModuleReader").log(Level.SEVERE,"Terminating:\n Failed to read Variable name starting at %d: \n Expected int at %<d".formatted(this.bb.position()));
+            throw new RuntimeException(mee);
+        }
     }
 
     private Event.ParameterisedEvent readEvent(){
@@ -92,20 +137,30 @@ public class ModuleReader {
         return new Event.ParameterisedEvent(Event.fromID(id),actualParameters);
     }
 
-    private Value readValue(){
+    private Value<?> readValue(){
         Value.Types type = readType();
-        return switch (type){
-            case INVALID -> throw new RuntimeException("Read invalid type at" + this.bb.position());
-            case INT -> Value.of(this.bb.getInt());
-            case BOOL -> Value.of(this.bb.get());
-            case FLOAT -> Value.of((this.bb.getFloat()));
-            case STRING -> Value.of(this.readString());
-        };
+        try {
+            return switch (type) {
+                case INVALID -> throw new RuntimeException("Read invalid type at" + this.bb.position());
+                case INT -> Value.of(this.readInt());
+                case BOOL -> Value.of(this.readBoolean());
+                case FLOAT -> Value.of((this.bb.getFloat()));
+                case STRING -> this.readString();
+            };
+        } catch (MissingElementException | BufferUnderflowException ex){
+            Logger.getLogger("com.github.JAA2M.ModuleReader").log(Level.SEVERE,"Terminating:\n Failed to read value starting at %d: \n Expected int at %<d".formatted(this.bb.position()));
+            throw new RuntimeException(ex);
+        }
     }
 
     private Action.ParameterisedAction readAction(){
-        int id = this.bb.getInt();
-        return new Action.ParameterisedAction(Action.fromId(id),this.readListOf(this::readExpression));
+        try {
+            int id = this.readInt();
+            return new Action.ParameterisedAction(Action.fromId(id), this.readListOf(this::readExpression));
+        } catch (MissingElementException mee){
+            Logger.getLogger("com.github.JAA2M.ModuleReader").log(Level.SEVERE,"Terminating:\n Failed to read Action starting at %d: \n Expected int at %<d".formatted(this.bb.position()));
+            throw new RuntimeException(mee);
+        }
     }
 
 
@@ -120,16 +175,28 @@ public class ModuleReader {
     }
 
     private <T> List<T> readListOf(Supplier<T> supplier){
-        int length = this.bb.getInt();
-        List<T> ret = new ArrayList<T>(length);
+        int length;
+        try {
+            length = this.readInt();
+        } catch (MissingElementException mee){
+            Logger.getLogger("com.github.JAA2M.ModuleReader").log(Level.SEVERE,"Terminating:\n Failed to read List length starting at %d: \n Expected int at %<d".formatted(this.bb.position()));
+            throw new RuntimeException(mee);
+        }
+        List<T> ret = new ArrayList<>(length);
         for(int i = 0; i < length;i++){
-            ret.add(supplier.get());
+                ret.add(supplier.get());
         }
         return ret;
     }
 
     private Trigger readTrigger(){
-        wString name = readString();
+        Value.strValue name;
+        try{
+           name = readString();
+        } catch (MissingElementException mee){
+            Logger.getLogger("com.github.JAA2M.ModuleReader").log(Level.SEVERE,"Terminating:\n Failed to read Trigger name starting at %d: \n Expected int at %<d".formatted(this.bb.position()));
+            throw new RuntimeException(mee);
+        }
         List<Event.ParameterisedEvent> events = readListOf(this::readEvent);
         List<Variable> vars = readListOf(this::readVariable);
         List<GUIAction> guiAction = readListOf(this::readGUIAction);
@@ -138,21 +205,48 @@ public class ModuleReader {
 
     private GlobalVariable readGlobalVar(){
         Value.Types type = this.readType();
-        wString name = this.readString();
-        Value defaultValue = this.readValue();
-        Value currentValue = this.readValue();
+        wString name;
+        try{
+            name= this.readString();
+        } catch (MissingElementException mee){
+            Logger.getLogger("com.github.JAA2M.ModuleReader").log(Level.SEVERE,"Terminating:\n Failed to read Global Variable name starting at %d: \n Expected int at %<d".formatted(this.bb.position()));
+            throw new RuntimeException(mee);
+        }
+        Value<?> defaultValue = this.readValue();
+        Value<?> currentValue = this.readValue();
         boolean initialized = this.readBoolean();
         return new GlobalVariable(-0,type,name,defaultValue,currentValue,initialized);
     }
 
     private Module readModule(){
-        wString name = this.readString();
-        wString desc = this.readString();
+        Value.strValue name;
+        Value.strValue desc;
+        try {
+            name = this.readString();
+        } catch (MissingElementException mee){
+            Logger.getLogger("com.github.JAA2M.ModuleReader").log(Level.SEVERE,"Terminating:\n Failed to read Module name starting at %d: \n Expected String at %<d".formatted(this.bb.position()));
+            throw new RuntimeException(mee);
+        }
+        try {
+            desc = this.readString();
+        } catch (MissingElementException mee) {
+            Logger.getLogger("com.github.JAA2M.ModuleReader").log(Level.WARNING,"Failed to read Module description, consider adding one to your Module");
+            desc = Value.of("");
+        }
         List<Trigger> triggers = this.readListOf(this::readTrigger);
         List<GlobalVariable> globalVariables = this.readListOf(this::readGlobalVar);
-        List<wString> dependencies = this.readListOf(this::readString);
+        List<Value.strValue> dependencies;
+        try{
+            dependencies = this.readListOf(() -> {
+                try {
+                    return readString();
+                } catch (MissingElementException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        } catch (Exception e){
+            throw new RuntimeException(e);
+        }
         return new Module(name,desc,globalVariables,triggers,dependencies);
     }
-
-
 }
